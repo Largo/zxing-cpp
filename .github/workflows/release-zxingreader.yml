@@ -1,0 +1,67 @@
+name: Release ZXingReader.exe
+
+# Builds a fully static Windows ZXingReader.exe (static ZXing lib + static MSVC
+# runtime, no DLL dependencies) and attaches it to a GitHub release.
+#
+# - on a tag push (v*): the exe is attached to the release for that tag
+# - on manual dispatch: the exe is attached to a rolling 'zxingreader-latest' prerelease
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: true
+
+    - name: Configure
+      run: >
+        cmake -S . -B build
+        -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+        -DBUILD_SHARED_LIBS=OFF
+        -DZXING_LINK_CPP_STATICALLY=ON
+        -DZXING_READERS=ON
+        -DZXING_WRITERS=OFF
+        -DZXING_C_API=OFF
+        -DZXING_EXAMPLES=ON
+        -DZXING_UNIT_TESTS=OFF
+        -DZXING_BLACKBOX_TESTS=OFF
+
+    - name: Build
+      run: cmake --build build --parallel --config ${{env.BUILD_TYPE}} --target ZXingReader
+
+    - name: Collect binary
+      shell: bash
+      run: |
+        exe=$(find build -name ZXingReader.exe | head -n1)
+        echo "found: $exe"
+        mkdir -p dist
+        cp "$exe" dist/ZXingReader.exe
+
+    - name: Smoke test
+      shell: bash
+      run: ./dist/ZXingReader.exe -version
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: ZXingReader-win-x64
+        path: dist/ZXingReader.exe
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'zxingreader-latest' }}
+        name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'ZXingReader latest build' }}
+        prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        files: dist/ZXingReader.exe
